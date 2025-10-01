@@ -263,3 +263,6 @@ RECYCLE.BIN/
 *.msp
 # Windows shortcuts
 *.lnk
+
+# robot json file which automatically updates every time
+examples/A3_template/robot_graph.json
