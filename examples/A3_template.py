@@ -1,5 +1,7 @@
 """Assignment 3 template code."""
 
+import datetime
+
 # Standard library
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -43,6 +45,9 @@ SCRIPT_NAME = __file__.split("/")[-1][:-3]
 CWD = Path.cwd()
 DATA = CWD / "__data__" / SCRIPT_NAME
 DATA.mkdir(exist_ok=True)
+
+DATA_ROBOTS = CWD / "__data__" / SCRIPT_NAME / "robots"
+DATA_ROBOTS.mkdir(exist_ok=True)
 
 # Global variables
 SPAWN_POS = [-0.8, 0, 0.1]
@@ -263,10 +268,11 @@ def main() -> None:
 
     # ? ------------------------------------------------------------------ #
     # Save the graph to a file
+    timestamp = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%d_%H%M%S",)
     save_graph_as_json(
         robot_graph,
-        DATA / "robot_graph.json",
-    )
+        DATA_ROBOTS / f"robot_graph_{timestamp}.json"
+    )    
 
     # ? ------------------------------------------------------------------ #
     # Print all nodes
