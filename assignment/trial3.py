@@ -391,8 +391,10 @@ def mutate_genotypes(genotypes: list, mutation_rate=0.1, mutation_strength=0.05)
     return mutated_genotypes
 
 def crossover_and_mutation(genotypes: list, n_parents = 3, scaling_factor=-0.5):
+    """FIGURE OUT K-TOURNAMENT SELECTION"""
     k = (POP_SIZE + n_parents) // 2
-    genotype_parents = RNG.random.choice(genotypes, n_parents)
+    genotype_parents = RNG.random.choice(genotypes, k)
+    # choose 3 best parents using k-tournament selection
     revde = RevDE(scaling_factor)
     mutated_genotype_offspring = revde.mutate(genotype_parents[0], genotype_parents[1], genotype_parents[2])
     
