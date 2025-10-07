@@ -1,3 +1,4 @@
+from copy import deepcopy
 import datetime
 
 # Standard library
@@ -6,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import matplotlib.pyplot as plt
 import mujoco as mj
+import mujoco
 import numpy as np
 import numpy.typing as npt
 from mujoco import viewer
@@ -58,7 +60,7 @@ SPAWN_POS_TILTED = []
 
 NDE = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
 HPD = HighProbabilityDecoder(NUM_OF_MODULES)
-POP_SIZE = 1
+POP_SIZE = 4
 
 def movement_fitness(history: list[float]) -> float:
     """Check if the spawned body is able to move at all"""
@@ -86,7 +88,7 @@ def test_movement(
 
     # Spawn robot in the world
     # Check docstring for spawn conditions
-    world.spawn(robot.spec, spawn_position=SPAWN_POS)
+    world.spawn(robot, spawn_position=SPAWN_POS)
 
     # Generate the model and data
     # These are standard parts of the simulation USE THEM AS IS, DO NOT CHANGE
@@ -253,7 +255,7 @@ def experiment(
 
     # Spawn robot in the world
     # Check docstring for spawn conditions
-    world.spawn(robot.spec, spawn_position=SPAWN_POS)
+    world.spawn(robot, spawn_position=SPAWN_POS)
 
     # Generate the model and data
     # These are standard parts of the simulation USE THEM AS IS, DO NOT CHANGE
@@ -322,7 +324,7 @@ def calculate_fitness(core):
 
     show_xpos_history(tracker.history["xpos"][0])
 
-    fitness = fitness_function2(tracker.history["xpos"][0])
+    fitness = fitness_function(tracker.history["xpos"][0])
 
 
     return fitness
@@ -338,9 +340,7 @@ def construct_core(genotype):
     )
 
     core = construct_mjspec_from_graph(robot_graph)
-    print(core)
-
-    return core
+    return mujoco.MjSpec.from_string(core.spec.to_xml())
 
 def initialise_cores(genotypes):
     cores = []
@@ -474,18 +474,18 @@ def initialise_population() -> None:
     return genotypes
 
 if __name__ == "__main__":
-    # genotypes = initialise_population()
-    # cores = initialise_cores(genotypes)
-    # for core in cores:
-    #     print(calculate_fitness(core))
+    genotypes = initialise_population()
+    cores = initialise_cores(genotypes)
+    for core in cores:
+        print(calculate_fitness(core))
     
-    genotype = initialise_genotype()
-    core = construct_core(genotype)
-    print(calculate_fitness(core))
+    # genotype = initialise_genotype()
+    # core = construct_core(genotype)
+    # print(calculate_fitness(core))
 
-    genotype = initialise_genotype()
-    core = construct_core(genotype)
-    print(calculate_fitness(core))
+    # genotype = initialise_genotype()
+    # core = construct_core(genotype)
+    # print(calculate_fitness(core))
 
 
     # test whether they can even move
