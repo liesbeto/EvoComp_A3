@@ -1,4 +1,3 @@
-from copy import deepcopy
 import datetime
 
 # Standard library
@@ -141,7 +140,7 @@ def fitness_function2(history: list[float], terrain="flat"):
     xs, ys, zs = spawn_pos
     xc, yc, zc = history[-1]
 
-    fitness = (yc - ys) - abs(xc - xs)
+    fitness = -(yc - ys) - 0.5*abs(xc - xs)
 
     return fitness
 
@@ -324,7 +323,7 @@ def calculate_fitness(core):
 
     show_xpos_history(tracker.history["xpos"][0])
 
-    fitness = fitness_function(tracker.history["xpos"][0])
+    fitness = fitness_function2(tracker.history["xpos"][0])
 
 
     return fitness
@@ -391,11 +390,20 @@ def mutate_genotypes(genotypes: list, mutation_rate=0.1, mutation_strength=0.05)
     return mutated_genotypes
 
 def crossover_and_mutation(genotypes: list, n_parents = 3, scaling_factor=-0.5):
-    """FIGURE OUT K-TOURNAMENT SELECTION"""
+    """FIGURE OUT K-TOURNAMENT SELECTION. THIS FUNCTION STILL HAS A LOT OF ISSUES AAAAHHHHHHH"""
     k = (POP_SIZE + n_parents) // 2
-    genotype_parents = RNG.random.choice(genotypes, k)
+
+    # something is wrong here with the dimension of k i think
+    # genotype_parents = RNG.sample(genotypes, k)
+
+    # i stole this from chatGPT so maybe we need to change it up a little but idrk how it works
+    indices = RNG.choice(len(genotypes), k, replace=False)
+    genotype_parents = [genotypes[i] for i in indices]
+
     # choose 3 best parents using k-tournament selection
     revde = RevDE(scaling_factor)
+
+    # gives error saying "list object has no attribute shape" about genotype_parents[0]
     mutated_genotype_offspring = revde.mutate(genotype_parents[0], genotype_parents[1], genotype_parents[2])
     
     return mutated_genotype_offspring
@@ -478,15 +486,6 @@ if __name__ == "__main__":
     cores = initialise_cores(genotypes)
     for core in cores:
         print(calculate_fitness(core))
-    
-    # genotype = initialise_genotype()
-    # core = construct_core(genotype)
-    # print(calculate_fitness(core))
-
-    # genotype = initialise_genotype()
-    # core = construct_core(genotype)
-    # print(calculate_fitness(core))
-
 
     # test whether they can even move
     
@@ -494,10 +493,10 @@ if __name__ == "__main__":
     #     # apply SNES
 
 
-    #     # evolve the robot bodies
-    #     # genotype_parents = select_genotype_parents(genotypes)
-    #     # genotype_offspring = crossover_genotypes(genotype_parents)
-    #     # mutated_genotype_offspring = mutate_genotypes(genotype_offspring)
-    #     mutated_genotype_offspring = crossover_and_mutation(genotypes)
-    #     genotypes = select_survival_genotypes(genotypes)
+        # evolve the robot bodies
+        # genotype_parents = select_genotype_parents(genotypes)
+        # genotype_offspring = crossover_genotypes(genotype_parents)
+        # mutated_genotype_offspring = mutate_genotypes(genotype_offspring)
+    mutated_genotype_offspring = crossover_and_mutation(genotypes)
+    genotypes = select_survival_genotypes(genotypes)
 
