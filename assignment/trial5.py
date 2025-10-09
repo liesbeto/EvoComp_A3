@@ -551,14 +551,6 @@ def construct_core(genotype):
         return None
 
 
-
-def initialise_cores(genotypes):
-    cores = []
-    for genotype in genotypes:
-        cores.append(construct_core(genotype))
-    return cores
-
-
 def crossover_and_mutation(robots, scaling_factor=-0.2):
     revde = RevDE(scaling_factor)
     k = 3
@@ -647,19 +639,6 @@ def save_genotype(genotype):
     return filename
 
 
-def draw_genotype(genotype):
-    p_matrices = NDE.forward(genotype)
-
-    # Decode the high-probability graph
-    robot_graph: DiGraph[Any] = HPD.probability_matrices_to_graph(
-        p_matrices[0],
-        p_matrices[1],
-        p_matrices[2],
-    )
-
-    draw_graph(robot_graph)
-
-
 def initialise_genotype():
     genotype_size = 64
     type_p_genes = RNG.random(genotype_size).astype(np.float32)
@@ -674,12 +653,6 @@ def initialise_genotype():
 
     return genotype
 
-
-def initialise_population() -> None:
-    genotypes = []
-    for _ in range(POP_SIZE):
-        genotypes.append(initialise_genotype())
-    return genotypes
 
 def main(body_gens, brain_gens):
     # order in dictionary: place in population : [genotype, genotype_filename_string, core, best_policy, best_policy_filename, fitness]
