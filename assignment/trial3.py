@@ -19,6 +19,7 @@ from ariel.body_phenotypes.robogen_lite.constructor import (
 from ariel.body_phenotypes.robogen_lite.decoders.hi_prob_decoding import (
     HighProbabilityDecoder,
     save_graph_as_json,
+    draw_graph
 )
 from ariel.ec.genotypes.nde import NeuralDevelopmentalEncoding
 from ariel.simulation.controllers.controller import Controller
@@ -54,98 +55,152 @@ SPAWN_POS = [-0.8, 0, 0.1]
 NUM_OF_MODULES = 30
 TARGET_POSITION = [5, 0, 0.5]
 
-SPAWN_POS_ROUGH = []
-SPAWN_POS_TILTED = []
+# ? still need to figure out these locations :/
+SPAWN_POS_ROUGH = [1.3, 0, 0.1]
+SPAWN_POS_TILTED = [3.5, 0, 0.2]
 
 NDE = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
 HPD = HighProbabilityDecoder(NUM_OF_MODULES)
-POP_SIZE = 4
+POP_SIZE = 5
 
-def movement_fitness(history: list[float]) -> float:
+def movement_fitness(history: list[float], terrain="flat") -> float:
     """Check if the spawned body is able to move at all"""
     xs, ys, zs = SPAWN_POS
     xc, yc, zc = history[-1]
 
-    distance_from_spawn = np.sqrt(
-        (xs - xc) ** 2 + (ys - yc) ** 2 + (zs - zc) ** 2
-    )
+    distance_from_spawn = np.sqrt((xs - xc) ** 2 + (ys - yc) ** 2)
     return distance_from_spawn
 
-def test_movement(
-        robot: Any,
-        controller: Controller,
-        duration: int = 2,
-) -> None:
-    """Check to see whether an initialised robot body has ability to move at
-    all."""
-
-    mj.set_mjcb_control(None)  # DO NOT REMOVE
-
-    # Initialise world
-    # Import environments from ariel.simulation.environments
-    world = OlympicArena()
-
-    # Spawn robot in the world
-    # Check docstring for spawn conditions
-    world.spawn(robot, spawn_position=SPAWN_POS)
-
-    # Generate the model and data
-    # These are standard parts of the simulation USE THEM AS IS, DO NOT CHANGE
-    model = world.spec.compile()
-    data = mj.MjData(model)
-
-    # Reset state and time of simulation
-    mj.mj_resetData(model, data)
-
-    # Pass the model and data to the tracker
-    if controller.tracker is not None:
-        controller.tracker.setup(world.spec, data)
-
-    # Set the control callback function
-    # This is called every time step to get the next action.
-    args: list[Any] = []  # IF YOU NEED MORE ARGUMENTS ADD THEM HERE!
-    kwargs: dict[Any, Any] = {}  # IF YOU NEED MORE ARGUMENTS ADD THEM HERE!
-
-    mj.set_mjcb_control(
-        lambda m, d: controller.set_control(m, d, *args, **kwargs),
-    )
-
-    simple_runner(
-        model,
-        data,
-        duration=duration
-    )
-
-def fitness_function(history: list[float]) -> float:
+def given_fitness_function(history: list[float], terrain="flat") -> float:
     xt, yt, zt = TARGET_POSITION
     xc, yc, zc = history[-1]
 
     # Minimize the distance --> maximize the negative distance
-    cartesian_distance = np.sqrt(
-        (xt - xc) ** 2 + (yt - yc) ** 2 + (zt - zc) ** 2,
-    )
+    cartesian_distance = np.sqrt((xt - xc) ** 2 + (yt - yc) ** 2 + (zt - zc) ** 2)
     return -cartesian_distance
 
 def fitness_function2(history: list[float], terrain="flat"):
-    """Get as far as possible in the y-direction from the spawn point and
-    discourage movement in the x-direction"""
+    """Rewards positive y-movement and discourages any x-movement"""
 
     if terrain == "rough":
         spawn_pos = SPAWN_POS_ROUGH
     if terrain == "tilted":
         spawn_pos = SPAWN_POS_TILTED
-    else:
+    if terrain == "flat":
         spawn_pos = SPAWN_POS
     
     xs, ys, zs = spawn_pos
     xc, yc, zc = history[-1]
-
-    fitness = -(yc - ys) - 0.5*abs(xc - xs)
-
+    fitness = -(yc - ys) - abs(xc - xs)
     return fitness
 
+def fitness_function3(history: list[float], terrain="flat"):
+    """Rewards positive y-movement."""
 
-def show_xpos_history(history: list[float]) -> None:
+    if terrain == "rough":
+        spawn_pos = SPAWN_POS_ROUGH
+    if terrain == "tilted":
+        spawn_pos = SPAWN_POS_TILTED
+    if terrain == "flat":
+        spawn_pos = SPAWN_POS
+    
+    xs, ys, zs = spawn_pos
+    xc, yc, zc = history[-1]
+    fitness = -(yc - ys)
+    return fitness
+
+def fitness_function4(history: list[float], terrain="flat") -> float:
+    """Rewards any y-movement."""
+
+    xs, ys, zs = SPAWN_POS
+    xc, yc, zc = history[-1]
+    distance_from_spawn = np.sqrt((ys - yc) ** 2)
+    return distance_from_spawn
+
+def fitness_function5(history: list[float], terrain="flat", a=0.5) -> float:
+    """Rewards y-movement more than x-movement"""
+    xs, ys, zs = SPAWN_POS
+    xc, yc, zc = history[-1]
+
+    distance_from_spawn = np.sqrt(a*(xs - xc) ** 2 + (ys - yc) ** 2)
+    return distance_from_spawn
+
+
+def neuro_controller(model, data, to_track, policy) -> None:
+    # sinusclock
+    clock = np.sin(2*data.time)
+
+    # input is positions of the actuator motors plus the sinusclock
+    inputs = np.concatenate([data.qpos[3:], [clock]])
+
+    # convert inputs to PyTorch tensor
+    inputs_tensor = torch.FloatTensor(inputs)
+
+    # Get outputs from the PyTorch policy
+    with torch.no_grad():
+        outputs = policy(inputs_tensor).numpy()
+
+    data.ctrl = np.clip(outputs, -np.pi/2, np.pi/2)
+    # track hist
+    HISTORY.append(to_track[0].xpos.copy())
+
+
+def nn_controller(
+    model: mj.MjModel,
+    data: mj.MjData,
+) -> npt.NDArray[np.float64]:
+    # Simple 3-layer neural network
+    input_size = len(data.qpos)
+    hidden_size = 8
+    output_size = model.nu
+
+    # Initialize the networks weights randomly
+    # Normally, you would use the genes of an individual as the weights,
+    # Here we set them randomly for simplicity.
+    w1 = RNG.normal(loc=0.0138, scale=0.5, size=(input_size, hidden_size))
+    w2 = RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, hidden_size))
+    w3 = RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, output_size))
+
+    # Get inputs, in this case the positions of the actuator motors (hinges)
+    inputs = data.qpos
+
+    # Run the inputs through the lays of the network.
+    layer1 = np.tanh(np.dot(inputs, w1))
+    layer2 = np.tanh(np.dot(layer1, w2))
+    outputs = np.tanh(np.dot(layer2, w3))
+
+    # Scale the outputs
+    return outputs * np.pi
+
+
+def show_qpos_history(history:list):
+    # Convert list of [x,y,z] positions to numpy array
+    pos_data = np.array(history)
+    
+    # Create figure and axis
+    plt.figure(figsize=(10, 6))
+    
+    # Plot x,y trajectory
+    plt.plot(pos_data[:, 0], pos_data[:, 1], 'b-', label='Path')
+    plt.plot(pos_data[0, 0], pos_data[0, 1], 'go', label='Start')
+    plt.plot(pos_data[-1, 0], pos_data[-1, 1], 'ro', label='End')
+    
+    # Add labels and title
+    plt.xlabel('X Position')
+    plt.ylabel('Y Position') 
+    plt.title('Robot Path in XY Plane')
+    plt.legend()
+    plt.grid(True)
+    
+    # Set equal aspect ratio and center at (0,0)
+    plt.axis('equal')
+    max_range = max(abs(pos_data).max(), 0.3)  # At least 1.0 to avoid empty plots
+    plt.xlim(-max_range, max_range)
+    plt.ylim(-max_range, max_range)
+    
+    plt.show()
+
+def show_xpos_history(history: list[float], terrain="flat") -> None:
     # Create a tracking camera
     camera = mj.MjvCamera()
     camera.type = mj.mjtCamera.mjCAMERA_FREE
@@ -180,7 +235,12 @@ def show_xpos_history(history: list[float]) -> None:
     # Calculate initial position
     x0, y0 = int(h * 0.483), int(w * 0.815)
     xc, yc = int(h * 0.483), int(w * 0.9205)
-    ym0, ymc = 0, SPAWN_POS[0]
+    if terrain == "rough":
+        ym0, ymc = 0, SPAWN_POS_ROUGH[0]
+    if terrain == "tilted":
+        ym0, ymc = 0, SPAWN_POS_TILTED[0]
+    if terrain == "flat":
+        ym0, ymc = 0, SPAWN_POS[0]
 
     # Convert position data to pixel coordinates
     pixel_to_dist = -((ymc - ym0) / (yc - y0))
@@ -208,40 +268,16 @@ def show_xpos_history(history: list[float]) -> None:
     plt.title("Robot Path in XY Plane")
 
     # Show results
-    plt.show()
+    # plt.show()
+    plt.close()
 
-def nn_controller(
-    model: mj.MjModel,
-    data: mj.MjData,
-) -> npt.NDArray[np.float64]:
-    # Simple 3-layer neural network
-    input_size = len(data.qpos)
-    hidden_size = 8
-    output_size = model.nu
 
-    # Initialize the networks weights randomly
-    # Normally, you would use the genes of an individual as the weights,
-    # Here we set them randomly for simplicity.
-    w1 = RNG.normal(loc=0.0138, scale=0.5, size=(input_size, hidden_size))
-    w2 = RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, hidden_size))
-    w3 = RNG.normal(loc=0.0138, scale=0.5, size=(hidden_size, output_size))
-
-    # Get inputs, in this case the positions of the actuator motors (hinges)
-    inputs = data.qpos
-
-    # Run the inputs through the lays of the network.
-    layer1 = np.tanh(np.dot(inputs, w1))
-    layer2 = np.tanh(np.dot(layer1, w2))
-    outputs = np.tanh(np.dot(layer2, w3))
-
-    # Scale the outputs
-    return outputs * np.pi
-
-def experiment(
+def experiment_body(
     robot: Any,
     controller: Controller,
     duration: int = 5,
     mode: ViewerTypes = "viewer",
+    terrain: str = "flat"
 ) -> None:
     """Run the simulation with random movements."""
     # ==================================================================== #
@@ -254,7 +290,12 @@ def experiment(
 
     # Spawn robot in the world
     # Check docstring for spawn conditions
-    world.spawn(robot, spawn_position=SPAWN_POS)
+    if terrain == "rough":
+        world.spawn(robot, spawn_position=SPAWN_POS_ROUGH)
+    if terrain == "tilted":
+        world.spawn(robot, spawn_position=SPAWN_POS_TILTED)
+    if terrain == "flat":
+        world.spawn(robot, spawn_position=SPAWN_POS)
 
     # Generate the model and data
     # These are standard parts of the simulation USE THEM AS IS, DO NOT CHANGE
@@ -303,8 +344,8 @@ def experiment(
                 video_recorder=video_recorder,
             )
 
-def calculate_fitness(core):
-    # mujoco.reset_data()
+
+def calculate_fitness(core, duration=10, fitness_function=fitness_function2, terrain="flat", mode="simple"):
 
     mujoco_type_to_find = mj.mjtObj.mjOBJ_GEOM
     name_to_bind = "core"
@@ -315,18 +356,18 @@ def calculate_fitness(core):
 
     ctrl = Controller(
         controller_callback_function=nn_controller,
-        # controller_callback_function=random_move,
         tracker=tracker,
     )
 
-    experiment(robot=core, controller=ctrl, mode="simple")
+    experiment_body(robot=core, controller=ctrl, mode=mode, duration=duration, terrain=terrain)
 
-    show_xpos_history(tracker.history["xpos"][0])
+    # i get an error if i comment this function out for some reason but i thought it just makes the plot :/
+    show_xpos_history(tracker.history["xpos"][0], terrain=terrain)
 
-    fitness = fitness_function2(tracker.history["xpos"][0])
-
+    fitness = fitness_function(tracker.history["xpos"][0], terrain=terrain)
 
     return fitness
+
 
 def construct_core(genotype):
     p_matrices = NDE.forward(genotype)
@@ -341,78 +382,96 @@ def construct_core(genotype):
     core = construct_mjspec_from_graph(robot_graph)
     return mujoco.MjSpec.from_string(core.spec.to_xml())
 
+
 def initialise_cores(genotypes):
     cores = []
     for genotype in genotypes:
         cores.append(construct_core(genotype))
     return cores
 
-def crossover_genotypes(genotype_parents, p_crossover=0.1):
-    """Need to crossover the same of the 3 arrays in a genotype."""
+
+# def crossover_genotypes(genotype_parents, p_crossover=0.1):
+#     """Need to crossover the same of the 3 arrays in a genotype."""
     
-    num_of_dims = len(genotype_parents[0][0])
+#     num_of_dims = len(genotype_parents[0][0])
 
-    genotype_offspring = []
-    for i in range(0, len(genotype_parents), 2):
-        if RNG.random() <= p_crossover:
-            offspring1, offspring2 = [], []
-            for j in range(0, 3):
-                crossover_point = RNG.randint(1, num_of_dims-1)
+#     genotype_offspring = []
+#     for i in range(0, len(genotype_parents), 2):
+#         if RNG.random() <= p_crossover:
+#             offspring1, offspring2 = [], []
+#             for j in range(0, 3):
+#                 crossover_point = RNG.randint(1, num_of_dims-1)
 
-                offspring1_array = genotype_parents[i][j][:crossover_point] + genotype_parents[i+1][j][crossover_point:]
-                offspring2_array = genotype_parents[i+1][j][:crossover_point] + genotype_parents[i][j][crossover_point:]
-                offspring1.append(offspring1_array)
-                offspring2.append(offspring2_array)
-            genotype_offspring.append(offspring1)
-            genotype_offspring.append(offspring2)
+#                 offspring1_array = genotype_parents[i][j][:crossover_point] + genotype_parents[i+1][j][crossover_point:]
+#                 offspring2_array = genotype_parents[i+1][j][:crossover_point] + genotype_parents[i][j][crossover_point:]
+#                 offspring1.append(offspring1_array)
+#                 offspring2.append(offspring2_array)
+#             genotype_offspring.append(offspring1)
+#             genotype_offspring.append(offspring2)
 
-    return genotype_offspring
+#     return genotype_offspring
 
-def mutate_genotypes(genotypes: list, mutation_rate=0.1, mutation_strength=0.05):
-    """Mutate the genotypes.
-    Each genotype is made up of 3 arrays of 64 (genotype_size) floats.
-    So we iterate over the genotypes, the arrays, and then mutate the floats.
-    We end up with double the amount of genotypes, the original list and each item mutated."""
+# def mutate_genotypes(genotypes: list, mutation_rate=0.1, mutation_strength=0.05):
+#     """Mutate the genotypes.
+#     Each genotype is made up of 3 arrays of 64 (genotype_size) floats.
+#     So we iterate over the genotypes, the arrays, and then mutate the floats.
+#     We end up with double the amount of genotypes, the original list and each item mutated."""
 
-    mutated_genotypes = []
-    for genotype in genotypes:
-        mutated_genotype = []
-        for list1 in genotype:
-            mutated_list1 = []
-            for item in list1:
-                mutation_size = 0
-                if RNG.random() <= mutation_rate:
-                    mutation_size = RNG.normal(0, mutation_strength)
-                mutated_list1.append(item + mutation_size)
-            mutated_genotype.append(mutated_list1)
-        mutated_genotypes.append(mutated_genotype)
+#     mutated_genotypes = []
+#     for genotype in genotypes:
+#         mutated_genotype = []
+#         for list1 in genotype:
+#             mutated_list1 = []
+#             for item in list1:
+#                 mutation_size = 0
+#                 if RNG.random() <= mutation_rate:
+#                     mutation_size = RNG.normal(0, mutation_strength)
+#                 mutated_list1.append(item + mutation_size)
+#             mutated_genotype.append(mutated_list1)
+#         mutated_genotypes.append(mutated_genotype)
 
-    return mutated_genotypes
+#     return mutated_genotypes
 
-def crossover_and_mutation(genotypes: list, n_parents = 3, scaling_factor=-0.5):
-    """FIGURE OUT K-TOURNAMENT SELECTION. THIS FUNCTION STILL HAS A LOT OF ISSUES AAAAHHHHHHH"""
-    k = (POP_SIZE + n_parents) // 2
+def crossover_and_mutation(genotypes: list, scaling_factor=-0.5):
+    """FIGURE OUT K-TOURNAMENT SELECTION."""
+    """Three parents are selected at random and crossover and mutation creates three children."""
+    revde = RevDE(scaling_factor)
 
-    # something is wrong here with the dimension of k i think
-    # genotype_parents = RNG.sample(genotypes, k)
+    # # for tournament selection
+    # n_parents = 3
+    # k = (len(genotypes) + n_parents) // 2
+    k = 3
 
     # i stole this from chatGPT so maybe we need to change it up a little but idrk how it works
     indices = RNG.choice(len(genotypes), k, replace=False)
     genotype_parents = [genotypes[i] for i in indices]
-
-    # choose 3 best parents using k-tournament selection
-    revde = RevDE(scaling_factor)
-
-    # gives error saying "list object has no attribute shape" about genotype_parents[0]
-    mutated_genotype_offspring = revde.mutate(genotype_parents[0], genotype_parents[1], genotype_parents[2])
+    
+    # the parents are split into their type, conn, and rot lists and RevDE is
+    # applied to each part of the split separately. then they are recombined
+    # so the offspring each have a type, conn, and rot list.
+    mutated_genotype_offspring = np.zeros((3, 3), dtype=object)
+    split_mutated_genotype_offspring = []
+    for i in range(3):
+        split_genotype_parents = []
+        for genotype in genotype_parents:
+            split_genotype_parents.append(genotype[i])
+        split_mutated_genotype_offspring = revde.mutate(
+            np.array(split_genotype_parents[0]),
+            np.array(split_genotype_parents[1]),
+            np.array(split_genotype_parents[2])
+        )
+        for j in range(len(split_mutated_genotype_offspring)):
+            mutated_genotype_offspring[j,i] = split_mutated_genotype_offspring[j].astype(np.float32)
+    mutated_genotype_offspring = mutated_genotype_offspring.tolist()
     
     return mutated_genotype_offspring
 
-def select_survival_genotypes(genotypes: list) -> list:
+
+def select_survival_genotypes(genotypes: list, gen: int, n: int = POP_SIZE, fitness_function = movement_fitness) -> list:
     fitness_scores = []
     for genotype in genotypes:
         core = construct_core(genotype)
-        fitness = calculate_fitness(core)
+        fitness = calculate_fitness(core, duration=40, fitness_function=fitness_function)
         fitness_scores.append(fitness)
     
     # sort lists from largest fittest value to smallest by adding each value
@@ -438,14 +497,14 @@ def select_survival_genotypes(genotypes: list) -> list:
     
     # sorted lists are shortened to return parents and offspring together to
     # original population size
-    evolved_genotypes = genotypes_sorted[:POP_SIZE]
-    evolved_fitnesses = fitnesses_sorted[:POP_SIZE]
+    evolved_genotypes = genotypes_sorted[:n]
+    evolved_fitnesses = fitnesses_sorted[:n]
 
     return evolved_genotypes
 
-def save_genotype(nde, genotype):
 
-    p_matrices = nde.forward(genotype)
+def save_genotype(genotype):
+    p_matrices = NDE.forward(genotype)
 
     # Decode the high-probability graph
     robot_graph: DiGraph[Any] = HPD.probability_matrices_to_graph(
@@ -461,6 +520,20 @@ def save_genotype(nde, genotype):
         DATA_ROBOTS / f"robot_graph_{timestamp}.json"
     )
 
+
+def draw_genotype(genotype):
+    p_matrices = NDE.forward(genotype)
+
+    # Decode the high-probability graph
+    robot_graph: DiGraph[Any] = HPD.probability_matrices_to_graph(
+        p_matrices[0],
+        p_matrices[1],
+        p_matrices[2],
+    )
+
+    draw_graph(robot_graph)
+
+
 def initialise_genotype():
     genotype_size = 64
     type_p_genes = RNG.random(genotype_size).astype(np.float32)
@@ -475,28 +548,79 @@ def initialise_genotype():
 
     return genotype
 
+
 def initialise_population() -> None:
     genotypes = []
     for _ in range(POP_SIZE):
         genotypes.append(initialise_genotype())
     return genotypes
 
-if __name__ == "__main__":
-    genotypes = initialise_population()
-    cores = initialise_cores(genotypes)
-    for core in cores:
-        print(calculate_fitness(core))
+def main(generations=5):
+    # simple initialisation of genotypes and cores
+    # genotypes = initialise_population()
+    # cores = initialise_cores(genotypes)
 
-    # test whether they can even move
+    # initialisation with checking for enough movement in beginning
+    genotypes = []
+    while len(genotypes) < POP_SIZE:
+        genotype = initialise_genotype()
+        core = construct_core(genotype)
+        fitness = calculate_fitness(core,duration=2,fitness_function=fitness_function3)
+        print(fitness)
+        print(len(genotypes))
+        if fitness > 0.1:
+            genotypes.append(genotype)
+
+    # print(genotypes[0])
+
+    # trial to see if the different terrains work (to find spawn points)
+    # for genotype in [genotypes[0]]:
+    #     core = construct_core(genotype)
+    #     print(calculate_fitness(core,duration=5,fitness_function=fitness_function2, terrain="flat"))
+    #     # print(calculate_fitness(core,duration=5,fitness_function=fitness_function2, terrain="flat"))
+    #     # print(calculate_fitness(core,duration=5,fitness_function=fitness_function2, terrain="rough"))
     
-    # for _ in range(generations):
-    #     # apply SNES
+    # for genotype in [genotypes[0]]:
+    #     core = construct_core(genotype)
+    #     print(calculate_fitness(core,duration=5,fitness_function=fitness_function2, terrain="rough"))
 
+    best_genotype = genotypes[0]
+    best_fitness = calculate_fitness(construct_core(genotypes[0]), fitness_function=fitness_function3)
+    for i in range(generations):
+        # apply SNES
 
         # evolve the robot bodies
-        # genotype_parents = select_genotype_parents(genotypes)
-        # genotype_offspring = crossover_genotypes(genotype_parents)
-        # mutated_genotype_offspring = mutate_genotypes(genotype_offspring)
-    mutated_genotype_offspring = crossover_and_mutation(genotypes)
-    genotypes = select_survival_genotypes(genotypes)
+        genotypes_and_offspring = genotypes
+        for _ in range(5):
+            genotypes_and_offspring += crossover_and_mutation(genotypes)
+        genotypes = select_survival_genotypes(genotypes_and_offspring, gen=i, fitness_function=fitness_function3)
+        fitness = calculate_fitness(construct_core(genotypes[0]), fitness_function=fitness_function3)
+        print(fitness)
+        if fitness > best_fitness:
+            best_genotype = genotypes[0]
+            best_fitness = fitness
+            print(i)
+    best_core = construct_core(best_genotype)
+    print(calculate_fitness(best_core, duration=40, fitness_function=fitness_function3, mode="video"))
+    draw_genotype(best_genotype)
+    save_genotype(best_genotype)
 
+
+# def test_crossover_and_mutation():
+#     hehe = []
+#     i = 0
+#     for j in range(3):
+#         hoho = []
+#         for k in range(3):
+#             haha = []
+#             for l in range(5):
+#                 haha.append(i)
+#                 i += 1
+#             hoho.append(haha)
+#         hehe.append(hoho)
+#     print(crossover_and_mutation(hehe)[0])
+
+
+if __name__ == "__main__":
+    main(generations=100)
+    # test_crossover_and_mutation()

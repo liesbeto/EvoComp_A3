@@ -145,6 +145,9 @@ def main(pop: int) -> None:
     cores = []
     i = 0
 
+    nde = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
+    hpd = HighProbabilityDecoder(NUM_OF_MODULES)
+
     while len(cores) < pop:
         i += 1
         genotype_size = 64
@@ -158,11 +161,11 @@ def main(pop: int) -> None:
             rot_p_genes,
         ]
 
-        nde = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
+        
         p_matrices = nde.forward(genotype)
 
         # Decode the high-probability graph
-        hpd = HighProbabilityDecoder(NUM_OF_MODULES)
+        
         robot_graph: DiGraph[Any] = hpd.probability_matrices_to_graph(
             p_matrices[0],
             p_matrices[1],

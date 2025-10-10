@@ -40,7 +40,7 @@ import os
 import torch.nn as nn
 import math
 from evotorch.neuroevolution import NEProblem
-from evotorch.algorithms import SNES
+from evotorch.algorithms import XNES
 from evotorch.logging import StdOutLogger, PandasLogger
 from functools import partial
 
@@ -225,14 +225,13 @@ def show_xpos_history(history: list[float], terrain="flat") -> None:
 
     # Initialize world to get the background
     mj.set_mjcb_control(None)
-    world = OlympicArena()
+    world = OlympicArena(load_precompiled=False)
     model = world.spec.compile()
     data = mj.MjData(model)
     save_path = str(DATA / "background.png")
     single_frame_renderer(
         model,
         data,
-        camera=camera,
         save_path=save_path,
         save=True,
     )
@@ -300,16 +299,16 @@ def experiment_body(
 
     # Initialise world
     # Import environments from ariel.simulation.environments
-    world = OlympicArena()
+    world = OlympicArena(load_precompiled=False)
 
     # Spawn robot in the world
     # Check docstring for spawn conditions
     if terrain == "rough":
-        world.spawn(robot, spawn_position=SPAWN_POS_ROUGH)
+        world.spawn(robot, position=SPAWN_POS_ROUGH)
     if terrain == "tilted":
-        world.spawn(robot, spawn_position=SPAWN_POS_TILTED)
+        world.spawn(robot, position=SPAWN_POS_TILTED)
     if terrain == "flat":
-        world.spawn(robot, spawn_position=SPAWN_POS)
+        world.spawn(robot, position=SPAWN_POS)
 
     # Generate the model and data
     # These are standard parts of the simulation USE THEM AS IS, DO NOT CHANGE
@@ -365,7 +364,7 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
     
     mujoco.set_mjcb_control(None)
     
-    world = OlympicArena()
+    world = OlympicArena(load_precompiled=False)
     
     with open(robot_core_string) as f:
         data = json.load(f)
@@ -374,7 +373,7 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
     robot_graph = nx.node_link_graph(data, edges="links")
     robot_core = construct_mjspec_from_graph(robot_graph)
 
-    world.spawn(robot_core.spec, spawn_position=[0, 0, 0])
+    world.spawn(robot_core.spec, position=SPAWN_POS)
     
     model = world.spec.compile()
     data = mujoco.MjData(model) 
@@ -448,9 +447,6 @@ class Policy(nn.Module):
 
 
 def detect_io_sizes(robot_core_string):
-    import json, networkx as nx, mujoco
-    from ariel.body_phenotypes.robogen_lite.constructor import construct_mjspec_from_graph
-    from ariel.simulation.environments import OlympicArena
 
     # Load robot graph
     with open(robot_core_string) as f:
@@ -460,9 +456,11 @@ def detect_io_sizes(robot_core_string):
     robot_graph = nx.node_link_graph(data, edges="links")
     robot_core = construct_mjspec_from_graph(robot_graph)
 
+    mujoco.set_mjcb_control(None)
+
     # Spawn robot inside the *actual* world environment
-    world = OlympicArena()
-    world.spawn(robot_core.spec, spawn_position=[0, 0, 0])
+    world = OlympicArena(load_precompiled=False)
+    world.spawn(robot_core.spec, position=SPAWN_POS)
     model = world.spec.compile()
     data = mujoco.MjData(model)
 
@@ -486,7 +484,7 @@ def evolution_brain(label, robot_core_string, generations=200):
         num_actors=6
     )
 
-    searcher = SNES(problem, stdev_init=0.9)
+    searcher = XNES(problem, stdev_init=0.9)
     # init logging 
     _ = StdOutLogger(searcher)
     pandas_logger = PandasLogger(searcher)
@@ -578,7 +576,7 @@ def crossover_and_mutation(robots, scaling_factor=-0.2):
             try:
                 core = construct_core(genotype)
                 filename = save_genotype(genotype)
-                robots[len(robots)] = [genotype, f"trial4/robots/{filename}", core]
+                robots[len(robots)] = [genotype, f"trial5/robots/{filename}", core]
                 break
             except Exception as e:
                 genotype = [np.clip(g + RNG.normal(0, 0.03, g.shape), 0, 1).astype(np.float32) for g in genotype]
@@ -664,26 +662,22 @@ def main(body_gens, brain_gens):
         core = construct_core(genotype)
         fitness = calculate_fitness(core,duration=2,fitness_function=movement_fitness)
         if fitness > 0.3:
-            robots[len(robots)] = [genotype, f"trial4/robots/{save_genotype(genotype)}", core]
+            robots[len(robots)] = [genotype, f"trial5/robots/{save_genotype(genotype)}", core]
 
     for _ in range(body_gens):
         # create 3 offspring
         robots = crossover_and_mutation(robots)
 
-        # apply SNES to population
+        # apply SNES to population and calculate fitness
         for i in range(len(robots)):
             if len(robots[i]) < 4:
                 best_policy, best_policy_filename = evolution_brain(f"{robots[i][1]}_brain", robots[i][1], generations=brain_gens)
                 robots[i].append(best_policy)
                 robots[i].append(best_policy_filename)
-
-        # calculate fitnesses to population
-        for i in range(len(robots)):
-            if len(robots[i]) < 6:
                 fitness = experiment_brain(robots[i][3], robots[i][1], view=False, video=False)
                 robots[i].append(fitness)
 
-        # pick best robots
+        # pick 5 best robots
         robots = pick_best_robots(robots)
 
         print(robots[0])
