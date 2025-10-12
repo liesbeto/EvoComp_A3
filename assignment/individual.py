@@ -26,7 +26,9 @@ DATA.mkdir(exist_ok=True)
 import random, numpy as np
 import torch 
 
-seed = 9
+from config import N, pos as start_pos
+
+seed = 33
 def seed_all(s=seed):
     random.seed(s)
     np.random.seed(s)
@@ -39,16 +41,16 @@ INPUT_SIZE = 13 # len(data.qpos) (15) - 3 head global positional args + sinusoid
 FIRST_HIDDEN_SIZE = 16 # custom, 'funnel' effect 
 SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 8
-pos = [0.0, 0, 1.0]
 target_pos= [5, 0, 0.5] 
-N =20
 useless_body = -100000
 min_dis = 0.1
+seed_all()
+nde = NeuralDevelopmentalEncoding(number_of_modules=N)
+hpd = HighProbabilityDecoder(N)
 
 def nn_controller(model: mj.MjModel, data: mj.MjData, weights):
     w1, w2, w3 = weights
     clock = np.sin(2 * data.time)
-    
 
     need = w1.shape[0] - 1          # how many qpos the net expects (minus the clock)
     inputs = np.concatenate([data.qpos[-need:], [clock]])
@@ -57,7 +59,6 @@ def nn_controller(model: mj.MjModel, data: mj.MjData, weights):
     outputs = np.tanh(np.dot(layer2, w3))
 
     return outputs * np.pi
-
 
 """
 def random_move(model, data, to_track) -> None:
@@ -110,7 +111,7 @@ def show_xpos_history(history: list[float]) -> None:
     # Calculate initial position
     x0, y0 = int(h * 0.483), int(w * 0.815)
     xc, yc = int(h * 0.483), int(w * 0.9205)
-    ym0, ymc = 0, pos[0]
+    ym0, ymc = 0, start_pos[0]
 
     # Convert position data to pixel coordinates
     pixel_to_dist = -((ymc - ym0) / (yc - y0))
@@ -145,19 +146,44 @@ def show_xpos_history(history: list[float]) -> None:
     # Show results
     plt.show()
 
-def run_individual(body_genes, weights=None, model=None,robot_spec=None, view=False, video=False):
+def _genes_to_weights(ctrl_genes: np.ndarray, input_size: int, hidden_size: int, output_size: int):
+    """slice a flat gene vector into (w1,w2,w3) for the current robot dims"""
+    w1_size = input_size * hidden_size
+    w2_size = hidden_size * hidden_size
+    w3_size = hidden_size * output_size
+    total   = w1_size + w2_size + w3_size
+    genes   = ctrl_genes
+
+    if genes is None:
+        # random if nothing provided
+        return (
+            np.random.randn(input_size, hidden_size),
+            np.random.randn(hidden_size, hidden_size),
+            np.random.randn(hidden_size, output_size),
+        )
+
+    if len(genes) < total:
+        # pad deterministically to avoid crashes
+        pad = np.random.randn(total - len(genes))
+        genes = np.concatenate([genes, pad])
+
+    i = 0
+    w1 = genes[i:i+w1_size].reshape(input_size, hidden_size); i += w1_size
+    w2 = genes[i:i+w2_size].reshape(hidden_size, hidden_size); i += w2_size
+    w3 = genes[i:i+w3_size].reshape(hidden_size, output_size)
+    return w1, w2, w3
+
+
+def run_individual(body_genes, weights=None, ctrl_genes: np.ndarray|None = None, view=False, video=False):
     
     mj.set_mjcb_control(None)
     world = OlympicArena()
-
-    seed_all()
-    nde = NeuralDevelopmentalEncoding(number_of_modules=N)
     p_matrices = nde.forward(body_genes)
-    hpd = HighProbabilityDecoder(N)
+
     robot_graph = hpd.probability_matrices_to_graph(*p_matrices)
     robot = construct_mjspec_from_graph(robot_graph)
 
-    world.spawn(robot.spec, spawn_position=pos)
+    world.spawn(robot.spec, spawn_position=start_pos)
     model = world.spec.compile()
     data = mj.MjData(model)
 
@@ -169,11 +195,7 @@ def run_individual(body_genes, weights=None, model=None,robot_spec=None, view=Fa
         input_size = len(data.qpos) + 1 
         hidden_size = 8
         output_size = model.nu
-        weights = (
-            np.random.randn(input_size, hidden_size),
-            np.random.randn(hidden_size, hidden_size),
-            np.random.randn(hidden_size, output_size),
-        )
+        weights = _genes_to_weights(ctrl_genes, input_size, hidden_size, output_size)
 
     # Reset state and time of simulation
     tracker = Tracker(
@@ -186,7 +208,7 @@ def run_individual(body_genes, weights=None, model=None,robot_spec=None, view=Fa
         controller_callback_function=lambda m, d: nn_controller(m, d, weights),
         tracker=tracker,
     )
-    mj.set_mjcb_control(None) 
+
     mj.mj_resetData(model, data)
     mj.set_mjcb_control(lambda m, d: ctrl.set_control(m, d))
     
@@ -194,29 +216,19 @@ def run_individual(body_genes, weights=None, model=None,robot_spec=None, view=Fa
     while data.time < duration:
         mj.mj_step(model, data)
 
-
-    # Return 0 if history is empty (simulation failed)
-    #if len(tracker.history.get("xpos", [])) == 0:
-    #    return -1e6
     if len(tracker.history["xpos"]) == 0 or len(tracker.history["xpos"][0]) == 0:
         return useless_body
     
-
-    #x0,_,_= tracker.history["xpos"][0][0]
     xc, yc, zc = tracker.history["xpos"][0][-1]
     xt, yt, zt = target_pos
 
-    #if (xc - x0) <min_dis:
-    #    return useless_body
-
-    # negative Euclidean distance to target
     cartesian_distance = np.sqrt(
         (xt - xc) ** 2 + (yt - yc) ** 2 + (zt - zc) ** 2
     )
     fitness = -cartesian_distance
 
     if view:
-        print(f'ypos_final: {tracker.history['xpos'][0][-1]}')
+        print(f"ypos_final: {tracker.history['xpos'][0][-1]}")
         print(f'fitness_final: {fitness}')
         viewer.launch(model=model, data=data)
         if len(tracker.history["xpos"][0]) > 0 :

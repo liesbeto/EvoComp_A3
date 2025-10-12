@@ -13,14 +13,19 @@ from ariel.body_phenotypes.robogen_lite.constructor import construct_mjspec_from
 from config import N, pos
 
 import random, numpy as np
+import networkx as nx
 import torch  
 
-SEED = 9
+SEED = 33
 # Uses the same seed for all the stochastity 
 def seed_all(s=SEED):
     random.seed(s)
     np.random.seed(s)
     torch.manual_seed(s)
+
+seed_all()
+nde = NeuralDevelopmentalEncoding(number_of_modules=N)
+hpd = HighProbabilityDecoder(N)
 
 
 def flatten_weights(weights):
@@ -46,22 +51,22 @@ def make_body():
     rot_genes = np.random.rand(genotype_size).astype(np.float32)
     return [type_genes, conn_genes, rot_genes]
 
-
+    
 def decode_robot_spec(body_genes):
     """ Uses the 3 lists of length 64 body_genes and NDE to return robot """
     # given body_genes NDE predicts probability tensors for N module robot
-    nde = NeuralDevelopmentalEncoding(number_of_modules=N) 
+    #nde = NeuralDevelopmentalEncoding(number_of_modules=N) 
     # Run gnome through NDE output is probability matrix 
     p_matrices = nde.forward(body_genes)
     # Makes the probabilities into robotgraph 
-    hpd = HighProbabilityDecoder(N)
+    #hpd = HighProbabilityDecoder(N)
     robot_graph = hpd.probability_matrices_to_graph(*p_matrices) # use * to pass elements of list one by one
-
     # turn graph into mujoco specification
     robot = construct_mjspec_from_graph(robot_graph)
     spec = robot.spec
     model = spec.compile()  # compiles into a MuJoCo model
     return model
+
 
 def dims_from_spec(model, hidden_size):
     """ Gets dimensions for neural network based on the body strucutre of robot"""
@@ -136,7 +141,7 @@ def evolve_bodies(num_generations=5, body_pop_size=5, brain_gens=5, brain_pop=6)
         new_bodies = []
         for b in best_bodies:
             new_bodies.append(b)
-            for _ in range(2):  # make 2 variants
+            for _ in range(2):
                 mutated = [np.clip(g + 0.1 * np.random.randn(*g.shape), 0, 1) for g in b]
                 new_bodies.append(mutated)
 
