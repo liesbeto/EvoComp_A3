@@ -9,6 +9,7 @@ import mujoco as mj
 import mujoco
 import numpy as np
 import numpy.typing as npt
+from pathlib import Path
 from mujoco import viewer
 
 # Local libraries
@@ -33,7 +34,7 @@ from ariel.utils.optimizers.revde import RevDE
 import json
 import networkx as nx
 import torch
-import ray
+#import ray
 import os
 
 import torch.nn as nn
@@ -385,7 +386,8 @@ def evolution_brain(label, robot_core_string, terrain="flat", generations=200):
         os.mkdir('__logs__')
         
     df = pandas_logger.to_dataframe()
-    df.to_csv(f'__logs__/{label}.csv')
+    label_name = Path(label).stem  # strip directories and .json
+    df.to_csv(f'__logs__/{label_name}.csv')
     
     if not os.path.exists('__gecks__'):
         os.mkdir('__gecks__')
@@ -393,8 +395,12 @@ def evolution_brain(label, robot_core_string, terrain="flat", generations=200):
     best_solution = searcher.status['best']
     best_policy = problem.make_net(best_solution)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    torch.save(best_policy.state_dict(), f"__gecks__/{label}_best_{timestamp}.pth")
-    return best_policy, f"__gecks__/{label}_best_{timestamp}.pth"
+    label_name = Path(label).stem
+    os.makedirs("__gecks__", exist_ok=True)
+
+    save_path = f"__gecks__/{label_name}_best_{timestamp}.pth"
+    torch.save(best_policy.state_dict(), save_path)
+    return best_policy, save_path
 
 
 def calculate_fitness(core, duration=10, fitness_function=movement_fitness, terrain="flat", mode="simple"):
@@ -462,7 +468,8 @@ def crossover_and_mutation(robots, scaling_factor=-0.5):
     for genotype in mutated_genotype_offspring:
         core = construct_core(genotype)
         filename = save_genotype(genotype)
-        robots[len(robots)] = [genotype, f"trial5/robots/{filename}", core]
+        robots[len(robots)] = [genotype, str(DATA_ROBOTS / filename), core]
+
     return robots
 
 
@@ -550,7 +557,8 @@ def main(body_gens, brain_gens):
         core = construct_core(genotype)
         fitness = calculate_fitness(core,duration=4,fitness_function=fitness_function3)
         if fitness > 0.1:
-            robots[len(robots)] = [genotype, f"trial5/robots/{save_genotype(genotype)}", core]
+            print('yes')
+            robots[len(robots)] = [genotype, str(DATA_ROBOTS / save_genotype(genotype)), core]
 
     for _ in range(body_gens):
         # create 3 offspring
@@ -572,4 +580,4 @@ def main(body_gens, brain_gens):
 
 
 if __name__ == "__main__":
-    main(body_gens=50, brain_gens=5)
+    main(body_gens=10, brain_gens=40)
