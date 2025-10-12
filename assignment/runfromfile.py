@@ -1,4 +1,6 @@
-from copy import deepcopy
+# the competition tester doesn't work with our neurocontroller, but this
+# file basically does the same thing
+
 import datetime
 
 # Standard library
@@ -76,13 +78,23 @@ NDE = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
 HPD = HighProbabilityDecoder(NUM_OF_MODULES)
 POP_SIZE = 5
 
-INPUT_SIZE = 11 # len(data.qpos) (15) - 3 head global positional args + sinusoidal clock
+INPUT_SIZE = 16 # len(data.qpos) (15) - 3 head global positional args + sinusoidal clock
 FIRST_HIDDEN_SIZE = 16 # custom, 'funnel' effect 
 SECOND_HIDDEN_SIZE = 12
-OUTPUT_SIZE = 6 # controls
+OUTPUT_SIZE = 11 # controls
 
 HISTORY = []
-DURATION = 5
+DURATION = 40
+
+def fitness_function(history: list[tuple[float, float, float]]) -> float:
+    xt, yt, zt = TARGET_POSITION
+    xc, yc, zc = history[-1]
+
+    # Minimize the distance --> maximize the negative distance
+    cartesian_distance = np.sqrt(
+        (yt - yc) ** 2 + (xt - xc) ** 2 + (zt - zc) ** 2
+    )
+    return -cartesian_distance
 
 def neuro_controller(model, data, to_track, policy) -> None:
     # sinusclock
@@ -148,6 +160,8 @@ def experiment_brain_one_terrain(policy, robot_core_string, terrain):
     # Return 0 if history is empty (simulation failed)
     if not HISTORY:
         return 0.0
+    
+    print(fitness_function(HISTORY))
 
 
 class Policy(nn.Module):
@@ -174,9 +188,9 @@ class Policy(nn.Module):
             x = x.unsqueeze(0)
         return self.net(x) * (math.pi / 2)
 
-robot_core_string = "trial5/robots/robot_graph_20251011_212416_577748.json"
-robot_brain_string = "__gecks__/trial5/robots/robot_graph_20251011_212416_577748.json_brain_best_20251011_212554_658562.pth"
+robot_core_string = "usain_ro-bolt.json"
+robot_brain_string = "usain_ro-bolt.pth"
 
 showbrain = Policy()
 showbrain.load_state_dict(torch.load(robot_brain_string))
-experiment_brain_one_terrain(showbrain, robot_core_string, terrain="tilted")
+experiment_brain_one_terrain(showbrain, robot_core_string, terrain="flat")

@@ -124,7 +124,30 @@ def show_qpos_history(history:list):
     
     plt.show()
 
-def experiment_brain(policy, robot_core_string, view=False, video=False):
+def fitness_function6(history=HISTORY, a=0.5) -> float:
+    """Rewards positive x-movement and punishes any y-movement"
+    (throughout whole history)."""
+
+    xs, ys, zs = history[2]
+    xc, yc, zc = history[-1]
+
+    average_ydeviation = np.mean(history[:][1])
+    fitness = (xc - xs) - a*abs(average_ydeviation)
+
+    return fitness
+
+def fitness_function(history: list[tuple[float, float, float]]) -> float:
+    xt, yt, zt = TARGET_POSITION
+    xc, yc, zc = history[-1]
+
+    # Minimize the distance --> maximize the negative distance
+    cartesian_distance = np.sqrt(
+        (xt - xc) ** 2 + (yt - yc) ** 2 + (zt - zc) ** 2,
+    )
+
+    return -cartesian_distance
+
+def experiment_brain(policy, robot_core_string):
     global HISTORY
     HISTORY = []
     
@@ -152,26 +175,6 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
     duration = DURATION
     while data.time < duration:
         mujoco.mj_step(model,data)
-    
-    if view:
-        viewer.launch(
-            model=model,  # type: ignore
-            data=data,
-        )
-        show_qpos_history(HISTORY)
-        
-    if video:
-        # # Non-default VideoRecorder options
-        PATH_TO_VIDEO_FOLDER = "./__videos__"
-        video_recorder = VideoRecorder(output_folder=PATH_TO_VIDEO_FOLDER)
-
-        # # Render with video recorder
-        video_renderer(
-            model,
-            data,
-            duration=40,
-            video_recorder=video_recorder,
-        )
        
     # Return 0 if history is empty (simulation failed)
     if not HISTORY:
@@ -179,12 +182,8 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
         
     # fitness is the forward motion, penalty for sideways motion is included
     # tilted world are compensated for 
-    fitness = (- (HISTORY[-1][0] - SPAWN_POS[0])) - abs(HISTORY[-1][1])
-    
-    if view:
-        print(f'ypos_final: {HISTORY[-1][1]}')
-        print(f'fitness_final: {fitness}')
-        
+    fitness = fitness_function(HISTORY)
+
     return fitness
 
 class Policy(nn.Module):
@@ -237,7 +236,7 @@ def evolution_brain(label, robot_core_string, generations=200):
     input_size, output_size = detect_io_sizes(robot_core_string)
 
     problem = NEProblem(
-        network=lambda: Policy(input_size=input_size, output_size=output_size),
+        network=lambda: Policy(input_size=16, output_size=11),
         network_eval_func=partial(experiment_brain, robot_core_string=robot_core_string),
         objective_sense="max",
         num_actors=6
@@ -263,13 +262,14 @@ def evolution_brain(label, robot_core_string, generations=200):
 
     best_solution = searcher.status['best']
     best_policy = problem.make_net(best_solution)
+    print(best_policy)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    torch.save(best_policy.state_dict(), f"__gecks__/{label}_best_{timestamp}.pth")
+    torch.save(best_policy.state_dict(), f"{label}_best.pth")
 
 
 def main():
 
-    evolution_brain('maybe', "trial5/robots/robot_graph_20251011_023319_812109.json", generations=200)
+    evolution_brain('usain_ro-bolt_better', "usain_ro-bolt.json", generations=100)
     ray.shutdown()
 
 main()

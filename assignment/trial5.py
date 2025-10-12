@@ -73,7 +73,7 @@ SPAWN_POS_TILTED = [3.0, 0, 0.3]
 
 NDE = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
 HPD = HighProbabilityDecoder(NUM_OF_MODULES)
-POP_SIZE = 5
+POP_SIZE = 8
 
 INPUT_SIZE = 13 # len(data.qpos) (15) - 3 head global positional args + sinusoidal clock
 FIRST_HIDDEN_SIZE = 16 # custom, 'funnel' effect 
@@ -572,4 +572,4 @@ def main(body_gens, brain_gens):
 
 
 if __name__ == "__main__":
-    main(body_gens=50, brain_gens=5)
+    main(body_gens=20, brain_gens=20)
