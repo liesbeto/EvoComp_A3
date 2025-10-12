@@ -15,7 +15,7 @@ import os
 import torch.nn as nn
 import math
 from evotorch.neuroevolution import NEProblem
-from evotorch.algorithms import SNES
+from evotorch.algorithms import XNES
 from evotorch.logging import StdOutLogger, PandasLogger
 
 import matplotlib.pyplot as plt
@@ -65,7 +65,7 @@ SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 8 # controls
 
 HISTORY = []
-DURATION = 10
+DURATION = 40
 
 def neuro_controller(model, data, to_track, policy) -> None:
 
@@ -139,7 +139,7 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
     robot_graph = nx.node_link_graph(data, edges="links")
     robot_core = construct_mjspec_from_graph(robot_graph)
 
-    world.spawn(robot_core.spec, spawn_position=[0, 0, 0])
+    world.spawn(robot_core.spec, position=[0, 0, 0])
     
     model = world.spec.compile()
     data = mujoco.MjData(model) 
@@ -169,7 +169,7 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
         video_renderer(
             model,
             data,
-            duration=30,
+            duration=40,
             video_recorder=video_recorder,
         )
        
@@ -179,7 +179,7 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
         
     # fitness is the forward motion, penalty for sideways motion is included
     # tilted world are compensated for 
-    fitness = (- (HISTORY[-1][1] - SPAWN_POS[1])) - abs(HISTORY[-1][0])
+    fitness = (- (HISTORY[-1][0] - SPAWN_POS[0])) - abs(HISTORY[-1][1])
     
     if view:
         print(f'ypos_final: {HISTORY[-1][1]}')
@@ -207,16 +207,43 @@ class Policy(nn.Module):
         return self.net(x) * (math.pi / 2)
 
 
+def detect_io_sizes(robot_core_string):
+
+    # Load robot graph
+    with open(robot_core_string) as f:
+        data = json.load(f)
+    if "edges" in data:
+        data["links"] = data.pop("edges")
+    robot_graph = nx.node_link_graph(data, edges="links")
+    robot_core = construct_mjspec_from_graph(robot_graph)
+
+    mujoco.set_mjcb_control(None)
+
+    # Spawn robot inside the *actual* world environment
+    world = OlympicArena()
+    world.spawn(robot_core.spec, position=SPAWN_POS)
+    model = world.spec.compile()
+    data = mujoco.MjData(model)
+
+    # Now detect the true sizes
+    input_size = len(data.qpos[3:]) + 1  # exclude global xyz, add clock
+    output_size = model.nu  # actuators
+
+    return input_size, output_size
+
+
 def evolution_brain(label, robot_core_string, generations=200):
 
+    input_size, output_size = detect_io_sizes(robot_core_string)
+
     problem = NEProblem(
-        network=lambda: Policy(),
+        network=lambda: Policy(input_size=input_size, output_size=output_size),
         network_eval_func=partial(experiment_brain, robot_core_string=robot_core_string),
         objective_sense="max",
         num_actors=6
     )
 
-    searcher = SNES(problem, stdev_init=0.9)
+    searcher = XNES(problem, stdev_init=0.9)
     # init logging 
     _ = StdOutLogger(searcher)
     pandas_logger = PandasLogger(searcher)
@@ -233,14 +260,16 @@ def evolution_brain(label, robot_core_string, generations=200):
     
     if not os.path.exists('__gecks__'):
         os.mkdir('__gecks__')
-        
+
     best_solution = searcher.status['best']
     best_policy = problem.make_net(best_solution)
-    torch.save(best_policy.state_dict(), f"__gecks__/{label}_best.pth")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    torch.save(best_policy.state_dict(), f"__gecks__/{label}_best_{timestamp}.pth")
+
 
 def main():
 
-    evolution_brain('trialtrial2', "trial3/robots/robot_graph_20251009_075557.json", generations=5)
+    evolution_brain('maybe', "trial5/robots/robot_graph_20251011_023319_812109.json", generations=200)
     ray.shutdown()
 
 main()

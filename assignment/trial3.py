@@ -55,13 +55,12 @@ SPAWN_POS = [-0.8, 0, 0.1]
 NUM_OF_MODULES = 30
 TARGET_POSITION = [5, 0, 0.5]
 
-# ? still need to figure out these locations :/
 SPAWN_POS_ROUGH = [1.3, 0, 0.1]
-SPAWN_POS_TILTED = [3.5, 0, 0.2]
+SPAWN_POS_TILTED = [3.0, 0, 0.3]
 
 NDE = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
 HPD = HighProbabilityDecoder(NUM_OF_MODULES)
-POP_SIZE = 5
+POP_SIZE = 1
 
 def movement_fitness(history: list[float], terrain="flat") -> float:
     """Check if the spawned body is able to move at all"""
@@ -91,7 +90,7 @@ def fitness_function2(history: list[float], terrain="flat"):
     
     xs, ys, zs = spawn_pos
     xc, yc, zc = history[-1]
-    fitness = -(yc - ys) - abs(xc - xs)
+    fitness = (xc - xs) - abs(yc - ys)
     return fitness
 
 def fitness_function3(history: list[float], terrain="flat"):
@@ -106,7 +105,7 @@ def fitness_function3(history: list[float], terrain="flat"):
     
     xs, ys, zs = spawn_pos
     xc, yc, zc = history[-1]
-    fitness = -(yc - ys)
+    fitness = (xc - xs)
     return fitness
 
 def fitness_function4(history: list[float], terrain="flat") -> float:
@@ -126,23 +125,38 @@ def fitness_function5(history: list[float], terrain="flat", a=0.5) -> float:
     return distance_from_spawn
 
 
-def neuro_controller(model, data, to_track, policy) -> None:
-    # sinusclock
-    clock = np.sin(2*data.time)
+def fitness_function6(history, terrain="flat", a=0.5) -> float:
+    if terrain == "rough":
+        spawn_pos = SPAWN_POS_ROUGH
+    if terrain == "tilted":
+        spawn_pos = SPAWN_POS_TILTED
+    if terrain == "flat":
+        spawn_pos = SPAWN_POS
+    
+    xs, ys, zs = spawn_pos
+    xc, yc, zc = history[-1]
 
-    # input is positions of the actuator motors plus the sinusclock
-    inputs = np.concatenate([data.qpos[3:], [clock]])
+    average_ydeviation = np.mean(history[:][1])
+    fitness = (xc - xs) - a*abs(average_ydeviation)
+    return fitness
 
-    # convert inputs to PyTorch tensor
-    inputs_tensor = torch.FloatTensor(inputs)
+# def neuro_controller(model, data, to_track, policy) -> None:
+#     # sinusclock
+#     clock = np.sin(2*data.time)
 
-    # Get outputs from the PyTorch policy
-    with torch.no_grad():
-        outputs = policy(inputs_tensor).numpy()
+#     # input is positions of the actuator motors plus the sinusclock
+#     inputs = np.concatenate([data.qpos[3:], [clock]])
 
-    data.ctrl = np.clip(outputs, -np.pi/2, np.pi/2)
-    # track hist
-    HISTORY.append(to_track[0].xpos.copy())
+#     # convert inputs to PyTorch tensor
+#     inputs_tensor = torch.FloatTensor(inputs)
+
+#     # Get outputs from the PyTorch policy
+#     with torch.no_grad():
+#         outputs = policy(inputs_tensor).numpy()
+
+#     data.ctrl = np.clip(outputs, -np.pi/2, np.pi/2)
+#     # track hist
+#     HISTORY.append(to_track[0].xpos.copy())
 
 
 def nn_controller(
@@ -200,14 +214,14 @@ def show_qpos_history(history:list):
     
     plt.show()
 
-def show_xpos_history(history: list[float], terrain="flat") -> None:
-    # Create a tracking camera
-    camera = mj.MjvCamera()
-    camera.type = mj.mjtCamera.mjCAMERA_FREE
-    camera.lookat = [2.5, 0, 0]
-    camera.distance = 10
-    camera.azimuth = 0
-    camera.elevation = -90
+def show_xpos_history(history: list[float], terrain="flat", name="hehe") -> None:
+    # # Create a tracking camera
+    # camera = mj.MjvCamera()
+    # camera.type = mj.mjtCamera.mjCAMERA_FREE
+    # camera.lookat = [2.5, 0, 0]
+    # camera.distance = 10
+    # camera.azimuth = 0
+    # camera.elevation = -90
 
     # Initialize world to get the background
     mj.set_mjcb_control(None)
@@ -218,7 +232,6 @@ def show_xpos_history(history: list[float], terrain="flat") -> None:
     single_frame_renderer(
         model,
         data,
-        camera=camera,
         save_path=save_path,
         save=True,
     )
@@ -265,7 +278,7 @@ def show_xpos_history(history: list[float], terrain="flat") -> None:
     ax.legend()
 
     # Title
-    plt.title("Robot Path in XY Plane")
+    plt.title(f"Robot Path in XY Plane {name}")
 
     # Show results
     # plt.show()
@@ -291,11 +304,11 @@ def experiment_body(
     # Spawn robot in the world
     # Check docstring for spawn conditions
     if terrain == "rough":
-        world.spawn(robot, spawn_position=SPAWN_POS_ROUGH)
+        world.spawn(robot, position=SPAWN_POS_ROUGH)
     if terrain == "tilted":
-        world.spawn(robot, spawn_position=SPAWN_POS_TILTED)
+        world.spawn(robot, position=SPAWN_POS_TILTED)
     if terrain == "flat":
-        world.spawn(robot, spawn_position=SPAWN_POS)
+        world.spawn(robot, position=SPAWN_POS)
 
     # Generate the model and data
     # These are standard parts of the simulation USE THEM AS IS, DO NOT CHANGE
@@ -361,10 +374,12 @@ def calculate_fitness(core, duration=10, fitness_function=fitness_function2, ter
 
     experiment_body(robot=core, controller=ctrl, mode=mode, duration=duration, terrain=terrain)
 
-    # i get an error if i comment this function out for some reason but i thought it just makes the plot :/
-    show_xpos_history(tracker.history["xpos"][0], terrain=terrain)
-
     fitness = fitness_function(tracker.history["xpos"][0], terrain=terrain)
+
+    # i get an error if i comment this function out for some reason but i thought it just makes the plot :/
+    show_xpos_history(tracker.history["xpos"][0], terrain=terrain, name=fitness)
+
+    
 
     return fitness
 
@@ -565,7 +580,7 @@ def main(generations=5):
     while len(genotypes) < POP_SIZE:
         genotype = initialise_genotype()
         core = construct_core(genotype)
-        fitness = calculate_fitness(core,duration=2,fitness_function=fitness_function3)
+        fitness = calculate_fitness(core,duration=2,fitness_function=fitness_function3, mode="video", terrain="tilted")
         print(fitness)
         print(len(genotypes))
         if fitness > 0.1:
@@ -584,26 +599,26 @@ def main(generations=5):
     #     core = construct_core(genotype)
     #     print(calculate_fitness(core,duration=5,fitness_function=fitness_function2, terrain="rough"))
 
-    best_genotype = genotypes[0]
-    best_fitness = calculate_fitness(construct_core(genotypes[0]), fitness_function=fitness_function3)
-    for i in range(generations):
-        # apply SNES
+    # best_genotype = genotypes[0]
+    # best_fitness = calculate_fitness(construct_core(genotypes[0]), fitness_function=fitness_function3)
+    # for i in range(generations):
+    #     # apply SNES
 
-        # evolve the robot bodies
-        genotypes_and_offspring = genotypes
-        for _ in range(5):
-            genotypes_and_offspring += crossover_and_mutation(genotypes)
-        genotypes = select_survival_genotypes(genotypes_and_offspring, gen=i, fitness_function=fitness_function3)
-        fitness = calculate_fitness(construct_core(genotypes[0]), fitness_function=fitness_function3)
-        print(fitness)
-        if fitness > best_fitness:
-            best_genotype = genotypes[0]
-            best_fitness = fitness
-            print(i)
-    best_core = construct_core(best_genotype)
-    print(calculate_fitness(best_core, duration=40, fitness_function=fitness_function3, mode="video"))
-    draw_genotype(best_genotype)
-    save_genotype(best_genotype)
+    #     # evolve the robot bodies
+    #     genotypes_and_offspring = genotypes
+    #     for _ in range(5):
+    #         genotypes_and_offspring += crossover_and_mutation(genotypes)
+    #     genotypes = select_survival_genotypes(genotypes_and_offspring, gen=i, fitness_function=fitness_function3)
+    #     fitness = calculate_fitness(construct_core(genotypes[0]), fitness_function=fitness_function3)
+    #     print(fitness)
+    #     if fitness > best_fitness:
+    #         best_genotype = genotypes[0]
+    #         best_fitness = fitness
+    #         print(i)
+    # best_core = construct_core(best_genotype)
+    # print(calculate_fitness(best_core, duration=40, fitness_function=fitness_function3, mode="video"))
+    # draw_genotype(best_genotype)
+    # save_genotype(best_genotype)
 
 
 # def test_crossover_and_mutation():
@@ -622,5 +637,5 @@ def main(generations=5):
 
 
 if __name__ == "__main__":
-    main(generations=100)
+    main(generations=1)
     # test_crossover_and_mutation()

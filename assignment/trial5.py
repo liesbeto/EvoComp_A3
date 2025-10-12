@@ -1,4 +1,3 @@
-from copy import deepcopy
 import datetime
 
 # Standard library
@@ -69,9 +68,8 @@ SPAWN_POS = [-0.8, 0, 0.1]
 NUM_OF_MODULES = 30
 TARGET_POSITION = [5, 0, 0.5]
 
-# ? still need to figure out these locations :/
 SPAWN_POS_ROUGH = [1.3, 0, 0.1]
-SPAWN_POS_TILTED = [3.5, 0, 0.2]
+SPAWN_POS_TILTED = [3.0, 0, 0.3]
 
 NDE = NeuralDevelopmentalEncoding(number_of_modules=NUM_OF_MODULES)
 HPD = HighProbabilityDecoder(NUM_OF_MODULES)
@@ -83,61 +81,60 @@ SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 8 # controls
 
 HISTORY = []
-DURATION = 10
+DURATION = 7
 
-def movement_fitness(history: list[float], terrain="flat") -> float:
+def movement_fitness(history: list[float]) -> float:
     """Check if the spawned body is able to move at all"""
-    xs, ys, zs = SPAWN_POS
+
+    xs, ys, zs = history[2]
     xc, yc, zc = history[-1]
 
     distance_from_spawn = np.sqrt((xs - xc) ** 2 + (ys - yc) ** 2)
     return distance_from_spawn
 
 def fitness_function2(history: list[float], terrain="flat"):
-    """Rewards positive y-movement and discourages any x-movement"""
-
-    if terrain == "rough":
-        spawn_pos = SPAWN_POS_ROUGH
-    if terrain == "tilted":
-        spawn_pos = SPAWN_POS_TILTED
-    if terrain == "flat":
-        spawn_pos = SPAWN_POS
+    """Rewards positive x-movement and discourages any y-movement"""
     
-    xs, ys, zs = spawn_pos
+    xs, ys, zs = history[2]
     xc, yc, zc = history[-1]
-    fitness = -(yc - ys) - abs(xc - xs)
+    fitness = (xc - xs) - abs(yc - ys)
     return fitness
 
-def fitness_function3(history: list[float], terrain="flat"):
-    """Rewards positive y-movement."""
-
-    if terrain == "rough":
-        spawn_pos = SPAWN_POS_ROUGH
-    if terrain == "tilted":
-        spawn_pos = SPAWN_POS_TILTED
-    if terrain == "flat":
-        spawn_pos = SPAWN_POS
+def fitness_function3(history: list[float]):
+    """Rewards positive x-movement."""
     
-    xs, ys, zs = spawn_pos
+    xs, ys, zs = history[2]
     xc, yc, zc = history[-1]
-    fitness = -(yc - ys)
+    fitness = (xc - xs)
     return fitness
 
 def fitness_function4(history: list[float], terrain="flat") -> float:
-    """Rewards any y-movement."""
+    """Rewards any x-movement."""
 
-    xs, ys, zs = SPAWN_POS
+    xs, ys, zs = history[2]
     xc, yc, zc = history[-1]
-    distance_from_spawn = np.sqrt((ys - yc) ** 2)
+    distance_from_spawn = np.sqrt((xs - xc) ** 2)
     return distance_from_spawn
 
 def fitness_function5(history: list[float], terrain="flat", a=0.5) -> float:
     """Rewards y-movement more than x-movement"""
-    xs, ys, zs = SPAWN_POS
+    xs, ys, zs = history[2]
     xc, yc, zc = history[-1]
 
-    distance_from_spawn = np.sqrt(a*(xs - xc) ** 2 + (ys - yc) ** 2)
+    distance_from_spawn = np.sqrt(a*(ys - yc) ** 2 + (xs - xc) ** 2)
     return distance_from_spawn
+
+
+def fitness_function6(history=HISTORY, a=0.5) -> float:
+    """Rewards positive x-movement and punishes any y-movement"
+    (throughout whole history)."""
+
+    xs, ys, zs = history[2]
+    xc, yc, zc = history[-1]
+
+    average_ydeviation = np.mean(history[:][1])
+    fitness = (xc - xs) - a*abs(average_ydeviation)
+    return fitness
 
 
 def neuro_controller(model, data, to_track, policy) -> None:
@@ -187,104 +184,6 @@ def nn_controller(
     return outputs * np.pi
 
 
-def show_qpos_history(history:list):
-    # Convert list of [x,y,z] positions to numpy array
-    pos_data = np.array(history)
-    
-    # Create figure and axis
-    plt.figure(figsize=(10, 6))
-    
-    # Plot x,y trajectory
-    plt.plot(pos_data[:, 0], pos_data[:, 1], 'b-', label='Path')
-    plt.plot(pos_data[0, 0], pos_data[0, 1], 'go', label='Start')
-    plt.plot(pos_data[-1, 0], pos_data[-1, 1], 'ro', label='End')
-    
-    # Add labels and title
-    plt.xlabel('X Position')
-    plt.ylabel('Y Position') 
-    plt.title('Robot Path in XY Plane')
-    plt.legend()
-    plt.grid(True)
-    
-    # Set equal aspect ratio and center at (0,0)
-    plt.axis('equal')
-    max_range = max(abs(pos_data).max(), 0.3)  # At least 1.0 to avoid empty plots
-    plt.xlim(-max_range, max_range)
-    plt.ylim(-max_range, max_range)
-    
-    plt.show()
-
-def show_xpos_history(history: list[float], terrain="flat") -> None:
-    # Create a tracking camera
-    camera = mj.MjvCamera()
-    camera.type = mj.mjtCamera.mjCAMERA_FREE
-    camera.lookat = [2.5, 0, 0]
-    camera.distance = 10
-    camera.azimuth = 0
-    camera.elevation = -90
-
-    # Initialize world to get the background
-    mj.set_mjcb_control(None)
-    world = OlympicArena(load_precompiled=False)
-    model = world.spec.compile()
-    data = mj.MjData(model)
-    save_path = str(DATA / "background.png")
-    single_frame_renderer(
-        model,
-        data,
-        save_path=save_path,
-        save=True,
-    )
-
-    # Setup background image
-    img = plt.imread(save_path)
-    _, ax = plt.subplots()
-    ax.imshow(img)
-    w, h, _ = img.shape
-
-    # Convert list of [x,y,z] positions to numpy array
-    pos_data = np.array(history)
-
-    # Calculate initial position
-    x0, y0 = int(h * 0.483), int(w * 0.815)
-    xc, yc = int(h * 0.483), int(w * 0.9205)
-    if terrain == "rough":
-        ym0, ymc = 0, SPAWN_POS_ROUGH[0]
-    if terrain == "tilted":
-        ym0, ymc = 0, SPAWN_POS_TILTED[0]
-    if terrain == "flat":
-        ym0, ymc = 0, SPAWN_POS[0]
-
-    # Convert position data to pixel coordinates
-    pixel_to_dist = -((ymc - ym0) / (yc - y0))
-    pos_data_pixel = [[xc, yc]]
-    for i in range(len(pos_data) - 1):
-        xi, yi, _ = pos_data[i]
-        xj, yj, _ = pos_data[i + 1]
-        xd, yd = (xj - xi) / pixel_to_dist, (yj - yi) / pixel_to_dist
-        xn, yn = pos_data_pixel[i]
-        pos_data_pixel.append([xn + int(xd), yn + int(yd)])
-    pos_data_pixel = np.array(pos_data_pixel)
-
-    # Plot x,y trajectory
-    ax.plot(x0, y0, "kx", label="[0, 0, 0]")
-    ax.plot(xc, yc, "go", label="Start")
-    ax.plot(pos_data_pixel[:, 0], pos_data_pixel[:, 1], "b-", label="Path")
-    ax.plot(pos_data_pixel[-1, 0], pos_data_pixel[-1, 1], "ro", label="End")
-
-    # Add labels and title
-    ax.set_xlabel("X Position")
-    ax.set_ylabel("Y Position")
-    ax.legend()
-
-    # Title
-    plt.title("Robot Path in XY Plane")
-
-    # Show results
-    # plt.show()
-    plt.close()
-
-
 def experiment_body(
     robot: Any,
     controller: Controller,
@@ -299,7 +198,7 @@ def experiment_body(
 
     # Initialise world
     # Import environments from ariel.simulation.environments
-    world = OlympicArena(load_precompiled=False)
+    world = OlympicArena()
 
     # Spawn robot in the world
     # Check docstring for spawn conditions
@@ -357,14 +256,13 @@ def experiment_body(
                 video_recorder=video_recorder,
             )
 
-
-def experiment_brain(policy, robot_core_string, view=False, video=False):
+def experiment_brain_one_terrain(policy, robot_core_string, terrain):
     global HISTORY
     HISTORY = []
-    
+
     mujoco.set_mjcb_control(None)
     
-    world = OlympicArena(load_precompiled=False)
+    world = OlympicArena()
     
     with open(robot_core_string) as f:
         data = json.load(f)
@@ -373,8 +271,13 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
     robot_graph = nx.node_link_graph(data, edges="links")
     robot_core = construct_mjspec_from_graph(robot_graph)
 
-    world.spawn(robot_core.spec, position=SPAWN_POS)
-    
+    if terrain == "rough":
+        world.spawn(robot_core.spec, position=SPAWN_POS_ROUGH)
+    if terrain == "tilted":
+        world.spawn(robot_core.spec, position=SPAWN_POS_TILTED)
+    if terrain == "flat":
+        world.spawn(robot_core.spec, position=SPAWN_POS)
+
     model = world.spec.compile()
     data = mujoco.MjData(model) 
 
@@ -386,26 +289,6 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
     duration = DURATION
     while data.time < duration:
         mujoco.mj_step(model,data)
-    
-    if view:
-        viewer.launch(
-            model=model,  # type: ignore
-            data=data,
-        )
-        show_qpos_history(HISTORY)
-        
-    if video:
-        # # Non-default VideoRecorder options
-        PATH_TO_VIDEO_FOLDER = "./__videos__"
-        video_recorder = VideoRecorder(output_folder=PATH_TO_VIDEO_FOLDER)
-
-        # # Render with video recorder
-        video_renderer(
-            model,
-            data,
-            duration=30,
-            video_recorder=video_recorder,
-        )
        
     # Return 0 if history is empty (simulation failed)
     if not HISTORY:
@@ -413,12 +296,17 @@ def experiment_brain(policy, robot_core_string, view=False, video=False):
         
     # fitness is the forward motion, penalty for sideways motion is included
     # tilted world are compensated for 
-    fitness = (- (HISTORY[-1][1] - SPAWN_POS[1])) - abs(HISTORY[-1][0])
+    fitness = fitness_function6(HISTORY)
+
+    return fitness
+
+def experiment_brain(policy, robot_core_string):
+    fitness_flat = experiment_brain_one_terrain(policy, robot_core_string, terrain="flat")
+    fitness_rough = experiment_brain_one_terrain(policy, robot_core_string, terrain="rough")
+    fitness_tilted = experiment_brain_one_terrain(policy, robot_core_string, terrain="tilted")
     
-    if view:
-        print(f'ypos_final: {HISTORY[-1][1]}')
-        print(f'fitness_final: {fitness}')
-        
+    fitness = fitness_flat + fitness_rough + fitness_tilted
+
     return fitness
 
 class Policy(nn.Module):
@@ -459,7 +347,7 @@ def detect_io_sizes(robot_core_string):
     mujoco.set_mjcb_control(None)
 
     # Spawn robot inside the *actual* world environment
-    world = OlympicArena(load_precompiled=False)
+    world = OlympicArena()
     world.spawn(robot_core.spec, position=SPAWN_POS)
     model = world.spec.compile()
     data = mujoco.MjData(model)
@@ -472,7 +360,7 @@ def detect_io_sizes(robot_core_string):
     return input_size, output_size
 
 
-def evolution_brain(label, robot_core_string, generations=200):
+def evolution_brain(label, robot_core_string, terrain="flat", generations=200):
 
     input_size, output_size = detect_io_sizes(robot_core_string)
     print(f"Detected input_size={input_size}, output_size={output_size}")
@@ -509,7 +397,7 @@ def evolution_brain(label, robot_core_string, generations=200):
     return best_policy, f"__gecks__/{label}_best_{timestamp}.pth"
 
 
-def calculate_fitness(core, duration=10, fitness_function=fitness_function2, terrain="flat", mode="simple"):
+def calculate_fitness(core, duration=10, fitness_function=movement_fitness, terrain="flat", mode="simple"):
 
     mujoco_type_to_find = mj.mjtObj.mjOBJ_GEOM
     name_to_bind = "core"
@@ -524,37 +412,37 @@ def calculate_fitness(core, duration=10, fitness_function=fitness_function2, ter
     )
 
     experiment_body(robot=core, controller=ctrl, mode=mode, duration=duration, terrain=terrain)
+    mj.set_mjcb_control(None)
 
-    # i get an error if i comment this function out for some reason but i thought it just makes the plot :/
-    show_xpos_history(tracker.history["xpos"][0], terrain=terrain)
-
-    fitness = fitness_function(tracker.history["xpos"][0], terrain=terrain)
+    fitness = fitness_function(tracker.history["xpos"][0])
 
     return fitness
 
 
 def construct_core(genotype):
-    try:
-        p_matrices = NDE.forward(genotype)
-        robot_graph: DiGraph[Any] = HPD.probability_matrices_to_graph(
-            p_matrices[0],
-            p_matrices[1],
-            p_matrices[2],
-        )
 
-        core = construct_mjspec_from_graph(robot_graph)
-        return mujoco.MjSpec.from_string(core.spec.to_xml())
+    mujoco.set_mjcb_control(None)
 
-    except Exception as e:
-        return None
+    p_matrices = NDE.forward(genotype)
+    robot_graph: DiGraph[Any] = HPD.probability_matrices_to_graph(
+        p_matrices[0],
+        p_matrices[1],
+        p_matrices[2],
+    )
+
+    core = construct_mjspec_from_graph(robot_graph)
+    return mujoco.MjSpec.from_string(core.spec.to_xml())
 
 
-def crossover_and_mutation(robots, scaling_factor=-0.2):
+def crossover_and_mutation(robots, scaling_factor=-0.5):
     revde = RevDE(scaling_factor)
-    k = 3
-    genotypes = [robots[key][0] for key in robots]
-    indices = RNG.choice(len(genotypes), k, replace=False)
-    genotype_parents = [genotypes[i] for i in indices]
+    # k = 3
+    random_choice1 = RNG.choice([1, 2])
+    random_choice2 = RNG.choice([i for i in range(3,POP_SIZE)])
+    parent_indices = [0, random_choice1, random_choice2]
+    RNG.shuffle(parent_indices)
+    print(parent_indices)
+    genotype_parents = [robots[key][0] for key in parent_indices]
 
     offspring_list = []
     for i in range(3):
@@ -572,14 +460,9 @@ def crossover_and_mutation(robots, scaling_factor=-0.2):
     mutated_genotype_offspring = [offspring_list[i:i+3] for i in range(0, len(offspring_list), 3)]
 
     for genotype in mutated_genotype_offspring:
-        while True:
-            try:
-                core = construct_core(genotype)
-                filename = save_genotype(genotype)
-                robots[len(robots)] = [genotype, f"trial5/robots/{filename}", core]
-                break
-            except Exception as e:
-                genotype = [np.clip(g + RNG.normal(0, 0.03, g.shape), 0, 1).astype(np.float32) for g in genotype]
+        core = construct_core(genotype)
+        filename = save_genotype(genotype)
+        robots[len(robots)] = [genotype, f"trial5/robots/{filename}", core]
     return robots
 
 
@@ -588,6 +471,8 @@ def pick_best_robots(robots, n=POP_SIZE):
     for key in robots:
         robots_keys.append(key)
         fitness_scores.append(robots[key][5])
+
+    print(fitness_scores)
 
     fitnesses_sorted, keys_sorted = [fitness_scores[0]], [robots_keys[0]]
     for i in range(1,len(fitness_scores)):
@@ -607,6 +492,8 @@ def pick_best_robots(robots, n=POP_SIZE):
             fitnesses_sorted.append(fitness_scores[i])
             keys_sorted.append(robots_keys[i])
     
+    print(keys_sorted[:n])
+
     # sorted lists are shortened to return parents and offspring together to
     # original population size
     robots_temp = {}
@@ -616,6 +503,7 @@ def pick_best_robots(robots, n=POP_SIZE):
     robots = robots_temp
 
     return robots
+
 
 def save_genotype(genotype):
     p_matrices = NDE.forward(genotype)
@@ -660,8 +548,8 @@ def main(body_gens, brain_gens):
     while len(robots) < POP_SIZE:
         genotype = initialise_genotype()
         core = construct_core(genotype)
-        fitness = calculate_fitness(core,duration=2,fitness_function=movement_fitness)
-        if fitness > 0.3:
+        fitness = calculate_fitness(core,duration=4,fitness_function=fitness_function3)
+        if fitness > 0.1:
             robots[len(robots)] = [genotype, f"trial5/robots/{save_genotype(genotype)}", core]
 
     for _ in range(body_gens):
@@ -674,7 +562,7 @@ def main(body_gens, brain_gens):
                 best_policy, best_policy_filename = evolution_brain(f"{robots[i][1]}_brain", robots[i][1], generations=brain_gens)
                 robots[i].append(best_policy)
                 robots[i].append(best_policy_filename)
-                fitness = experiment_brain(robots[i][3], robots[i][1], view=False, video=False)
+                fitness = experiment_brain(robots[i][3], robots[i][1])
                 robots[i].append(fitness)
 
         # pick 5 best robots
@@ -684,4 +572,4 @@ def main(body_gens, brain_gens):
 
 
 if __name__ == "__main__":
-    main(body_gens=5, brain_gens=5)
+    main(body_gens=50, brain_gens=5)

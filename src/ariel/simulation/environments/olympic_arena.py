@@ -100,7 +100,7 @@ class OlympicArena(BaseWorld):
         )
 
         # Create noise generator
-        pnoise = PerlinNoise(seed=42)
+        pnoise = PerlinNoise()
 
         # Generate a grid of noise
         width, height = size, size
@@ -284,4 +284,4 @@ if __name__ == "__main__":
     arena = OlympicArena(
         load_precompiled=False,
     )
-    arena.compile_to_xml()
+    arena.store_to_xml()
