@@ -65,7 +65,7 @@ SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 8 # controls
 
 HISTORY = []
-DURATION = 40
+DURATION = 15
 
 def neuro_controller(model, data, to_track, policy) -> None:
 
@@ -150,10 +150,10 @@ def fitness_function(history: list[tuple[float, float, float]]) -> float:
 
     return -cartesian_distance
 
-def experiment_brain(policy, robot_core_string):
+def experiment_brain_one_terrain(policy, robot_core_string, terrain):
     global HISTORY
     HISTORY = []
-    
+
     mujoco.set_mjcb_control(None)
     
     world = OlympicArena()
@@ -165,8 +165,13 @@ def experiment_brain(policy, robot_core_string):
     robot_graph = nx.node_link_graph(data, edges="links")
     robot_core = construct_mjspec_from_graph(robot_graph)
 
-    world.spawn(robot_core.spec, position=[0, 0, 0])
-    
+    if terrain == "rough":
+        world.spawn(robot_core.spec, position=SPAWN_POS_ROUGH)
+    if terrain == "tilted":
+        world.spawn(robot_core.spec, position=SPAWN_POS_TILTED)
+    if terrain == "flat":
+        world.spawn(robot_core.spec, position=SPAWN_POS)
+
     model = world.spec.compile()
     data = mujoco.MjData(model) 
 
@@ -188,6 +193,16 @@ def experiment_brain(policy, robot_core_string):
     fitness = fitness_function6(HISTORY)
 
     return fitness
+
+def experiment_brain(policy, robot_core_string):
+    fitness_flat = experiment_brain_one_terrain(policy, robot_core_string, terrain="flat")
+    fitness_rough = experiment_brain_one_terrain(policy, robot_core_string, terrain="rough")
+    fitness_tilted = experiment_brain_one_terrain(policy, robot_core_string, terrain="tilted")
+    
+    fitness = fitness_flat + fitness_rough + fitness_tilted
+
+    return fitness
+
 
 class Policy(nn.Module):
     
