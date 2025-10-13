@@ -131,6 +131,9 @@ def fitness_function6(history=HISTORY, a=0.5) -> float:
     xs, ys, zs = history[2]
     xc, yc, zc = history[-1]
 
+    if zc < 0:
+        return -10
+
     average_ydeviation = np.mean(history[:][1])
     fitness = (xc - xs) - a*abs(average_ydeviation)
 
