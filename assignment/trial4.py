@@ -264,29 +264,50 @@ def evolution_brain(label, robot_core_string, generations=200):
     _ = StdOutLogger(searcher)
     pandas_logger = PandasLogger(searcher)
 
-    # running
-    searcher.run(generations)
-
     # saving
-    if not os.path.exists('__logs__'):
-        os.mkdir('__logs__')
-        
-    df = pandas_logger.to_dataframe()
-    df.to_csv(f'__logs__/{label}.csv')
+    os.makedirs("__usain__", exist_ok=True) 
+    os.makedirs("__gecks__", exist_ok=True)
+    
+    csv_path = Path("__usain__") / f"{label}.csv"
+
+    def save_progress():
+        df = pandas_logger.to_dataframe()
+        df.to_csv(csv_path, index=False)
+
+    # register callback to save each generation
+    for gen in range(generations):
+        searcher.step()           # run one iteration
+        save_progress()  
+
+    save_progress()
+
+    df = pandas_logger.to_dataframe() # refresh final state
+    plot_path = Path("__usain__") / f"{label}_fitness.png"
+    plot(df, label, save_path=plot_path)
     
     if not os.path.exists('__gecks__'):
         os.mkdir('__gecks__')
 
-    best_solution = searcher.status['best']
+    best_solution = searcher.status["best"]
     best_policy = problem.make_net(best_solution)
-    print(best_policy)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    torch.save(best_policy.state_dict(), f"{label}_best.pth")
+    model_path = Path("__usain__") / f"{label}_best_{timestamp}.pth"
+    torch.save(best_policy.state_dict(), model_path)
 
+def plot(df,label,save_path = None):
+    plt.figure()
+    plt.plot(df["best_eval"])
+    plt.title('Best fitness per generation')
+    plt.xlabel('Generations')
+    plt.ylabel('Fitness')
+
+    if save_path:
+        plt.savefig(save_path)
+        plt.close() # close figure
+    else:
+        plt.show()
 
 def main():
-
-    evolution_brain('usain_ro-bolt_better', "liesbet1.json", generations=150)
+    evolution_brain('usain_ro-bolt', "usain_ro-bolt.json", generations=5)
     ray.shutdown()
-
 main()
