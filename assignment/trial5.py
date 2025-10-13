@@ -81,7 +81,7 @@ SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 8 # controls
 
 HISTORY = []
-DURATION = 7
+DURATION = 10
 
 def movement_fitness(history: list[float]) -> float:
     """Check if the spawned body is able to move at all"""
@@ -306,9 +306,8 @@ def experiment_brain_one_terrain(policy, robot_core_string, terrain):
 def experiment_brain(policy, robot_core_string):
     fitness_flat = experiment_brain_one_terrain(policy, robot_core_string, terrain="flat")
     fitness_rough = experiment_brain_one_terrain(policy, robot_core_string, terrain="rough")
-    fitness_tilted = experiment_brain_one_terrain(policy, robot_core_string, terrain="tilted")
     
-    fitness = fitness_flat + fitness_rough + fitness_tilted
+    fitness = fitness_flat + fitness_rough
 
     return fitness
 
@@ -551,7 +550,7 @@ def main(body_gens, brain_gens):
     while len(robots) < POP_SIZE:
         genotype = initialise_genotype()
         core = construct_core(genotype)
-        fitness = calculate_fitness(core,duration=4,fitness_function=fitness_function3)
+        fitness = calculate_fitness(core,duration=4,fitness_function=fitness_function6)
         if fitness > 0.1:
             robots[len(robots)] = [genotype, f"trial5/robots/{save_genotype(genotype)}", core]
 
@@ -575,4 +574,4 @@ def main(body_gens, brain_gens):
 
 
 if __name__ == "__main__":
-    main(body_gens=40, brain_gens=40)
+    main(body_gens=100, brain_gens=10)

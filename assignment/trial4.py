@@ -65,7 +65,7 @@ SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 8 # controls
 
 HISTORY = []
-DURATION = 15
+DURATION = 10
 
 def neuro_controller(model, data, to_track, policy) -> None:
 
@@ -197,9 +197,8 @@ def experiment_brain_one_terrain(policy, robot_core_string, terrain):
 def experiment_brain(policy, robot_core_string):
     fitness_flat = experiment_brain_one_terrain(policy, robot_core_string, terrain="flat")
     fitness_rough = experiment_brain_one_terrain(policy, robot_core_string, terrain="rough")
-    fitness_tilted = experiment_brain_one_terrain(policy, robot_core_string, terrain="tilted")
     
-    fitness = fitness_flat + fitness_rough + fitness_tilted
+    fitness = fitness_flat + fitness_rough
 
     return fitness
 
@@ -287,7 +286,7 @@ def evolution_brain(label, robot_core_string, generations=200):
 
 def main():
 
-    evolution_brain('usain_ro-bolt_better', "usain_ro-bolt.json", generations=150)
+    evolution_brain('usain_ro-bolt_better', "liesbet1.json", generations=150)
     ray.shutdown()
 
 main()
