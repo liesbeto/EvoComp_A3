@@ -287,7 +287,7 @@ def evolution_brain(label, robot_core_string, generations=200):
 
 def main():
 
-    evolution_brain('usain_ro-bolt_better', "usain_ro-bolt.json", generations=100)
+    evolution_brain('usain_ro-bolt_better', "usain_ro-bolt.json", generations=150)
     ray.shutdown()
 
 main()
