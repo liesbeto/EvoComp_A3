@@ -185,7 +185,7 @@ def experiment_brain(policy, robot_core_string):
         
     # fitness is the forward motion, penalty for sideways motion is included
     # tilted world are compensated for 
-    fitness = fitness_function(HISTORY)
+    fitness = fitness_function6(HISTORY)
 
     return fitness
 
