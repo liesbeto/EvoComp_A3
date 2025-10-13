@@ -84,7 +84,7 @@ SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 11 # controls
 
 HISTORY = []
-DURATION = 5
+DURATION = 30
 
 from A3_plot_function import show_xpos_history
 
@@ -193,7 +193,7 @@ class Policy(nn.Module):
         return self.net(x) * (math.pi / 2)
 
 robot_core_string = "usain_ro-bolt.json"
-robot_brain_string = "usain_ro-bolt.pth"
+robot_brain_string = "__usain__/usain_ro-bolt_best_20251013_125411_824291.pth"
 
 showbrain = Policy()
 showbrain.load_state_dict(torch.load(robot_brain_string))

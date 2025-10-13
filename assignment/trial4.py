@@ -308,6 +308,6 @@ def plot(df,label,save_path = None):
         plt.show()
 
 def main():
-    evolution_brain('usain_ro-bolt', "usain_ro-bolt.json", generations=5)
+    evolution_brain('usain_ro-bolt', "usain_ro-bolt.json", generations=150)
     ray.shutdown()
 main()
