@@ -84,7 +84,9 @@ SECOND_HIDDEN_SIZE = 12
 OUTPUT_SIZE = 11 # controls
 
 HISTORY = []
-DURATION = 40
+DURATION = 5
+
+from A3_plot_function import show_xpos_history
 
 def fitness_function(history: list[tuple[float, float, float]]) -> float:
     xt, yt, zt = TARGET_POSITION
@@ -157,6 +159,8 @@ def experiment_brain_one_terrain(policy, robot_core_string, terrain):
         video_recorder=video_recorder,
     )
        
+    show_xpos_history(HISTORY)
+    
     # Return 0 if history is empty (simulation failed)
     if not HISTORY:
         return 0.0
