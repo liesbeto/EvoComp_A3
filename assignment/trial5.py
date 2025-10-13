@@ -575,4 +575,4 @@ def main(body_gens, brain_gens):
 
 
 if __name__ == "__main__":
-    main(body_gens=40, brain_gens=20)
+    main(body_gens=40, brain_gens=40)
