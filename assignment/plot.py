@@ -8,10 +8,9 @@ def make_plot(plot_filename, plot_y, save_path=None):
     y_data = df[plot_y]
     gens = [x for x in range(len(y_data))]
     plt.plot(gens, y_data, marker='o', markersize=3)
-    plt.xlabel("Brain generation")
-    plt.ylabel("Max fitness")
+    plt.xlabel("Brain generation", fontsize=18)
+    plt.ylabel("Max fitness", fontsize=18)
     plt.ylim(0, 1.5)
-    plt.title("Maximum Fitness per Brain Generation")
     plt.grid(True)
     plt.tight_layout()
 
@@ -31,11 +30,10 @@ def make_plot_two_y(plot1_filename, plot2_filename, plot_y, save_path=None):
     gens = [x for x in range(len(y_data1))]
     plt.plot(gens, y_data1, marker='o', markersize=5, label="EA")
     plt.plot(gens, y_data2, marker='o', markersize=5, label="Baseline")
-    plt.xlabel("Body generation")
-    plt.ylabel("Max fitness")
+    plt.xlabel("Body generation", fontsize=18)
+    plt.ylabel("Max fitness", fontsize=18)
     plt.ylim(-0.1, 1.5)
     plt.legend()
-    plt.title("Maximum Fitness per Generation")
     plt.grid(True)
     plt.tight_layout()
 
